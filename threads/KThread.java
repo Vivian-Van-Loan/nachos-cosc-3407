@@ -283,6 +283,9 @@ public class KThread {
 	if (this.status == statusFinished) { //Don't join on 'dead' threads
 	    return;
 	}
+	if (this.status == statusNew) {
+	    this.fork();
+	}
 
 	Lib.assertTrue(joinedThread == null);
 
@@ -417,6 +420,11 @@ public class KThread {
 	Lib.debug(dbgThread, "Enter KThread.selfTest");
 	
 	new KThread(new PingTest(1)).setName("forked thread").fork();
+
+	new KThread(new PingTest(2)).setName("second (joined) thread").join();
+
+	new KThread(new PingTest(3)).setName("third (forked) thread").fork();
+	new KThread(new PingTest(4)).setName("fourth (joined) thread").join();
 	new PingTest(0).run();
     }
 
