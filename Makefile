@@ -52,3 +52,6 @@ test:
 	cd ../test ; gmake
 
 ag:	$(patsubst ../ag/%.java,nachos/ag/%.class,$(wildcard ../ag/*.java))
+
+run:
+	../bin/nachos

@@ -191,9 +191,12 @@ public class KThread {
 	Lib.assertTrue(toBeDestroyed == null);
 	toBeDestroyed = currentThread;
 
-
 	currentThread.status = statusFinished;
-	
+
+	if (currentThread.joinedThread != null) {
+	    currentThread.joinedThread.ready();
+	}
+
 	sleep();
     }
 
@@ -277,6 +280,16 @@ public class KThread {
 
 	Lib.assertTrue(this != currentThread);
 
+	if (this.status == statusFinished) { //Don't join on 'dead' threads
+	    return;
+	}
+
+	Lib.assertTrue(joinedThread == null);
+
+	boolean interruptState = Machine.interrupt().disable();
+        this.joinedThread = currentThread; //It's said to be UB if more than one thread joins so we don't need a list
+    	KThread.sleep(); //Runs on currentThread
+        Machine.interrupt().restore(interruptState);
     }
 
     /**
@@ -437,6 +450,10 @@ public class KThread {
      * threads.
      */
     private int id = numCreated++;
+    /**
+     * (Nullable) pointer to a thread joined to this one. 
+     */
+    private KThread joinedThread;
     /** Number of times the KThread constructor was called. */
     private static int numCreated = 0;
 
