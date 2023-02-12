@@ -2,6 +2,9 @@ package nachos.threads;
 
 import nachos.machine.*;
 
+import java.util.LinkedList;
+import java.util.Queue;
+
 /**
  * A KThread is a thread that can be used to execute Nachos kernel code. Nachos
  * allows multiple threads to run concurrently.
@@ -193,8 +196,10 @@ public class KThread {
 
 	currentThread.status = statusFinished;
 
-	if (currentThread.joinedThread != null) {
-	    currentThread.joinedThread.ready();
+	KThread next = currentThread.joinedThreads.poll();
+	while (next != null) {
+	    next.ready();
+	    next = currentThread.joinedThreads.poll();
 	}
 
 	sleep();
@@ -283,14 +288,12 @@ public class KThread {
 	if (this.status == statusFinished) { //Don't join on 'dead' threads
 	    return;
 	}
-	if (this.status == statusNew) {
-	    this.fork();
-	}
-
-	Lib.assertTrue(joinedThread == null);
+//	if (this.status == statusNew) {
+//	    this.fork();
+//	}
 
 	boolean interruptState = Machine.interrupt().disable();
-        this.joinedThread = currentThread; //It's said to be UB if more than one thread joins so we don't need a list
+        joinedThreads.add(currentThread);
     	KThread.sleep(); //Runs on currentThread
         Machine.interrupt().restore(interruptState);
     }
@@ -403,14 +406,80 @@ public class KThread {
 	}
 	
 	public void run() {
-	    for (int i=0; i<5; i++) {
+	    for (int i = 0; i < 5; i++) {
 		System.out.println("*** thread " + which + " looped "
 				   + i + " times");
-		currentThread.yield();
+		if (Math.random() >= 0.6) //Unpredictability to catch any sync issues
+		    currentThread.yield();
 	    }
 	}
 
 	private int which;
+    }
+
+    private static void runPingTest() {
+	Lib.debug(dbgThread, "Entered KThread.runPingTest");
+
+	System.out.println("runPingTest:");
+        new KThread(new PingTest(1)).setName("forked thread").fork(); //Tests running concurrent
+
+        KThread newThread = new KThread(new PingTest(2)).setName("second (joined) thread");
+	newThread.fork();
+	newThread.join();
+
+        new KThread(new PingTest(3)).setName("third (forked) thread").fork(); //Tests running concurrent and joining
+    	newThread = new KThread(new PingTest(4)).setName("fourth (joined) thread");
+    	newThread.fork();
+    	newThread.join();
+        new PingTest(0).run();
+
+	System.out.println("\n\n");
+
+	Lib.debug(dbgThread, "Leaving KThread.runPingTest");
+    }
+
+    private static class CascadeTest implements Runnable {
+        CascadeTest(KThread toJoin) {
+	    this.toJoin = toJoin;
+	}
+	public void run() {
+	    if (toJoin != null) {
+	    	System.out.println("Thread " + id + " joining");
+		toJoin.fork();
+		currentThread.yield();
+		toJoin.join();
+		System.out.println("Thread " + id + " waking");
+	    }
+	    for (int i = 0; i < 3; i++) {
+	    	System.out.println("thread " + id + " looped " + i + " times");
+	    	currentThread.yield();
+	    }
+	}
+	private KThread toJoin;
+	private final int id = numThreads++;
+	private static int numThreads = 0;
+    }
+
+    private static void cascadeJoinTest() {
+	Lib.debug(dbgThread, "Entered KThread.cascadeJoinTest");
+
+	System.out.println("cascadeJoinTest:");
+	KThread[] threadPool1 = new KThread[10];
+	KThread[] threadPool2 = new KThread[10];
+	threadPool1[0] = new KThread(new CascadeTest(null));
+	threadPool2[0] = new KThread(new CascadeTest(null));
+	for (int i = 1; i < 10; i++) {
+	    threadPool1[i] = new KThread(new CascadeTest(threadPool1[i - 1]));
+	    threadPool2[i] = new KThread(new CascadeTest(threadPool2[i - 1]));
+	}
+    	threadPool1[9].fork();
+    	threadPool2[9].fork();
+    	threadPool1[9].join();
+    	threadPool2[9].join();
+
+    	System.out.println("\n\n");
+
+    	Lib.debug(dbgThread, "Leaving KThread.cascadeJoinTest");
     }
 
     /**
@@ -418,14 +487,9 @@ public class KThread {
      */
     public static void selfTest() {
 	Lib.debug(dbgThread, "Enter KThread.selfTest");
-	
-	new KThread(new PingTest(1)).setName("forked thread").fork();
+	runPingTest();
+    	cascadeJoinTest();
 
-	new KThread(new PingTest(2)).setName("second (joined) thread").join();
-
-	new KThread(new PingTest(3)).setName("third (forked) thread").fork();
-	new KThread(new PingTest(4)).setName("fourth (joined) thread").join();
-	new PingTest(0).run();
     }
 
     private static final char dbgThread = 't';
@@ -459,9 +523,9 @@ public class KThread {
      */
     private int id = numCreated++;
     /**
-     * (Nullable) pointer to a thread joined to this one. 
+     * List of threads joined to this one.
      */
-    private KThread joinedThread;
+    private final Queue<KThread> joinedThreads = new LinkedList<>();
     /** Number of times the KThread constructor was called. */
     private static int numCreated = 0;
 

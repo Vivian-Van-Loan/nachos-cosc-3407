@@ -2,6 +2,8 @@ package nachos.threads;
 
 import nachos.machine.*;
 
+import java.util.LinkedList;
+
 /**
  * An implementation of condition variables that disables interrupt()s for
  * synchronization.
@@ -55,4 +57,5 @@ public class Condition2 {
     }
 
     private Lock conditionLock;
+    private LinkedList<KThread> waitList = new LinkedList<>();
 }
