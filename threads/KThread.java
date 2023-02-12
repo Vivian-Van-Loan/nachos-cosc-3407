@@ -482,6 +482,44 @@ public class KThread {
     	Lib.debug(dbgThread, "Leaving KThread.cascadeJoinTest");
     }
 
+    private static class MultiJoin implements Runnable {
+    	public MultiJoin(KThread toJoin) {
+	    this.toJoin = toJoin;
+	}
+	public void run() {
+	    if (toJoin != null)
+	        toJoin.join();
+	    for (int i = 0; i < 3; i++) {
+		System.out.println("thread " + id + " looped " + i + " times");
+		currentThread.yield();
+	    }
+	}
+	private KThread toJoin;
+    	private int id = numThreads++;
+    	private static int numThreads = 0;
+    }
+
+    private static void multiJoinTest() {
+        Lib.debug(dbgThread, "Entered KThread.multiJoinTest");
+
+        System.out.println("multiJoinTest:");
+        KThread[] threadPool = new KThread[9];
+	KThread main = new KThread(new MultiJoin(null));
+        for (int i = 0; i < 9; i++) {
+	    threadPool[i] = new KThread(new MultiJoin(main));
+	    threadPool[i].fork();
+        }
+	main.fork();
+	main.join();
+
+	for (int i = 0; i < 9; i++)
+	    threadPool[i].join();
+
+        System.out.println("\n\n");
+
+        Lib.debug(dbgThread, "Leaving KThread.multiJoinTest");
+    }
+
     /**
      * Tests whether this module is working.
      */
@@ -489,7 +527,7 @@ public class KThread {
 	Lib.debug(dbgThread, "Enter KThread.selfTest");
 	runPingTest();
     	cascadeJoinTest();
-
+	multiJoinTest();
     }
 
     private static final char dbgThread = 't';
