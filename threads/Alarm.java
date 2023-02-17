@@ -50,4 +50,19 @@ public class Alarm {
 	while (wakeTime > Machine.timer().getTime())
 	    KThread.yield();
     }
+    
+    public static class WaitThread implements Comparable {
+	int wakeTime;
+	KThread thread;
+
+	public WaitThread(KThread thread, int wakeTime) {
+            this.thread = thread;
+            this.wakeTime = wakeTime;
+        }
+        
+        @Override
+        public int compareTo(Object thread) {
+            return this.wakeTime - ((WaitThread)thread).wakeTime;
+        }
+    }
 }
