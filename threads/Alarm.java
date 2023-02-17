@@ -65,4 +65,38 @@ public class Alarm {
             return this.wakeTime - ((WaitThread)thread).wakeTime;
         }
     }
+    
+    public static void selfTest() {
+        System.out.println("Alarm.java Tests:");
+        
+        class WaitTest implements Runnable {
+            int waitTime;
+            int tid;
+            Alarm alarm;
+            
+            public WaitTest(int waitTime, int tid) {
+                this.waitTime = waitTime;
+                this.tid = tid;
+                alarm = new Alarm();
+            }
+            
+            public void run() {
+                System.out.println("Running test #" + tid);
+                System.out.println("Testing wait time of " + waitTime + "ms, "
+                        + "going to sleep at: " + Machine.timer().getTime());
+               alarm.waitUntil(waitTime);
+               System.out.println("Waking up at " + Machine.timer().getTime());
+            }
+        }
+        
+        KThread t1 = new KThread(new WaitTest(5,1));
+        t1.fork();
+        t1.join();
+        KThread t2 = new KThread(new WaitTest(600,2));
+        t2.fork();
+        t2.join();
+        KThread t3 = new KThread(new WaitTest(1200,3));
+        t3.fork();
+        t3.join();
+    }
 }
