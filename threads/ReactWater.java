@@ -4,15 +4,16 @@
  */
 package threads;
 
-import java.util.PriorityQueue;
+import java.util.LinkedList;
 import nachos.threads.Alarm.*;
 import nachos.machine.*;
+import nachos.threads.KThread;
 import nachos.threads.Lock;
 
 public class ReactWater{
 
-    private static PriorityQueue<WaitThread> hQueue = new PriorityQueue<>();
-    private static PriorityQueue<WaitThread> oQueue = new PriorityQueue<>();
+    private static LinkedList<KThread> hQueue = new LinkedList<>();
+    private static LinkedList<KThread> oQueue = new LinkedList<>();
     private int hCount;
     private int oCount;
     private Lock reactLock;
@@ -39,8 +40,7 @@ public class ReactWater{
      *   H element wait in line. 
      **/ 
     public void hReady() {
-        WaitThread wthread = new WaitThread(KThread.currentThread(), 10);
-        hQueue.add(wthread);
+        hQueue.add(KThread.currentThread());
 	++hCount;
 	if(oCount >= 1 && hCount >= 2)
 		Makewater();
@@ -52,8 +52,7 @@ public class ReactWater{
      *   wait in line. 
      **/ 
     public void oReady() {
-        WaitThread wthread = new WaitThread(KThread.currentThread(), 10);
-        oQueue.add(wthread);
+        oQueue.add(KThread.currentThread());
 	++oCount;
 	if(oCount >= 1 && hCount >= 2)
 		Makewater();
@@ -64,18 +63,71 @@ public class ReactWater{
      **/
     public void Makewater() {
         if(reactLock.isHeldByCurrentThread()) {
-            do {
 		hCount -= 2;
 		--oCount;
-		oQueue.remove();
-		hQueue.remove();
-                hQueue.remove();
+		oQueue.removeFirst();
+		hQueue.removeFirst();
+                hQueue.removeFirst();
                 System.out.println("Water has been made");
-            }while (oCount >= 1 && hCount >=2);
 	}
 
     } // end of Makewater()
     
-    
+    public static void selfTest()
+	{
+            final Lock lock = new Lock();
+            final ReactWater testReact = new ReactWater(lock);
+            System.out.println("ReactWater.java Test:");
+            
+            class HydroThread implements Runnable {
+                public void run(){
+                    lock.acquire();
+                    testReact.hReady();
+                    Lib.debug('t', "There are currently " + testReact.hCount + " hydrogen threads and "
+                     + testReact.oCount + " oxygen threads.");
+                    lock.release();		
+                }
+            }
+            class OxyThread implements Runnable {
+                public void run(){
+                    lock.acquire();
+                    testReact.oReady();
+                    lock.release();
+                    Lib.debug('t', "There are currently " + testReact.hCount + " hydrogen threads and "
+                     + testReact.oCount + " oxygen threads.");
+                }
+            }
+            KThread h1 = new KThread(new HydroThread()); 
+            KThread h2 = new KThread(new HydroThread()); 
+            KThread h3 = new KThread(new HydroThread());
+            KThread h4 = new KThread(new HydroThread()); 
+            KThread h5 = new KThread(new HydroThread()); 
+            KThread h6 = new KThread(new HydroThread());
+            KThread h7 = new KThread(new HydroThread());
+            KThread o1 = new KThread(new OxyThread()); 
+            KThread o2 = new KThread(new OxyThread()); 
+            KThread o3 = new KThread(new OxyThread()); 
+            KThread o4 = new KThread(new OxyThread());
+            
+            System.out.println("Test 1 - 1 oxygen, 0 hydrogen, shouldnt't make water:");
+            o1.fork();
+            o1.join();
+            System.out.println("Test 2 - 1 oxygen, 1 hydrogen, shouldnt't make water:");
+            h1.fork();
+            h1.join();
+            System.out.println("Test 3 - 1 oxygen, 2 hydrogens, should make water:");
+            h2.fork();
+            h2.join();
+            System.out.println("Test 4 - 3 oxygens, 5 hydrogens, should make water twice:");
+            h3.fork();
+            h4.fork();
+            h5.fork();
+            h6.fork();
+            h7.fork();
+            o2.fork();
+            o3.fork();
+            o4.fork();
+            
+    }
     
 } // end of class ReactWater
