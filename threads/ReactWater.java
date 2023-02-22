@@ -118,7 +118,9 @@ public class ReactWater{
             System.out.println("Test 3 - 1 oxygen, 2 hydrogens, should make water:");
             h2.fork();
             h2.join();
+            System.out.println("Performance Test:");
             System.out.println("Test 4 - 3 oxygens, 5 hydrogens, should make water twice:");
+            long time1 = Machine.timer().getTime();
             h3.fork();
             h4.fork();
             h5.fork();
@@ -127,7 +129,16 @@ public class ReactWater{
             o2.fork();
             o3.fork();
             o4.fork();
-            
+            h3.join();
+            h4.join();
+            h5.join();
+            h6.join();
+            h7.join();
+            o2.join();
+            o3.join();
+            o4.join();
+            long time2 = Machine.timer().getTime();
+            System.out.println("Performance of test 4: " + (time2 - time1) + "ms");
     }
     
 } // end of class ReactWater
