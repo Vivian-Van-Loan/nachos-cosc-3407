@@ -433,8 +433,6 @@ public class KThread {
     	newThread.join();
         new PingTest(0).run();
 
-	System.out.println("\n\n");
-
 	Lib.debug(dbgThread, "Leaving KThread.runPingTest");
     }
 
@@ -477,8 +475,6 @@ public class KThread {
     	threadPool1[9].join();
     	threadPool2[9].join();
 
-    	System.out.println("\n\n");
-
     	Lib.debug(dbgThread, "Leaving KThread.cascadeJoinTest");
     }
 
@@ -515,8 +511,6 @@ public class KThread {
 	for (int i = 0; i < 9; i++)
 	    threadPool[i].join();
 
-        System.out.println("\n\n");
-
         Lib.debug(dbgThread, "Leaving KThread.multiJoinTest");
     }
 
@@ -525,9 +519,21 @@ public class KThread {
      */
     public static void selfTest() {
 	Lib.debug(dbgThread, "Enter KThread.selfTest");
+
+	long time1 = Machine.timer().getTime();
 	runPingTest();
+	long time2 = Machine.timer().getTime();
+	System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
+
+   	time1 = Machine.timer().getTime();
     	cascadeJoinTest();
+    	time2 = Machine.timer().getTime();
+    	System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
+
+    	time1 = Machine.timer().getTime();
 	multiJoinTest();
+    	time2 = Machine.timer().getTime();
+    	System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
     }
 
     private static final char dbgThread = 't';

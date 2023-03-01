@@ -1,7 +1,7 @@
 package nachos.threads;
 
 import nachos.machine.*;
-import threads.ReactWater;
+import nachos.threads.ReactWater;
 
 /**
  * A multi-threaded OS kernel.
@@ -52,6 +52,7 @@ public class ThreadedKernel extends Kernel {
 	KThread.selfTest();
 	Semaphore.selfTest();
 	SynchList.selfTest();
+        Condition2.SelfTest();
 	if (Machine.bank() != null) {
 	    ElevatorBank.selfTest();
 	}
