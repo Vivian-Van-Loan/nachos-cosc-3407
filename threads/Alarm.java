@@ -1,12 +1,16 @@
 package nachos.threads;
 
 import nachos.machine.*;
+import java.util.*;
 
 /**
  * Uses the hardware timer to provide preemption, and to allow threads to sleep
  * until a certain time.
  */
 public class Alarm {
+    
+    private static PriorityQueue<WaitThread> threadQueue = new PriorityQueue<>();
+    
     /**
      * Allocate a new Alarm. Set the machine's timer interrupt handler to this
      * alarm's callback.
@@ -27,6 +31,19 @@ public class Alarm {
      * that should be run.
      */
     public void timerInterrupt() {
+        boolean state = Machine.interrupt().disable(); 
+        
+        while(!threadQueue.isEmpty()) {
+            WaitThread thread = threadQueue.peek();
+            
+            if (thread.getWakeTime() <= Machine.timer().getTime()){
+                    threadQueue.poll();
+                    thread.getThread().ready();
+            }
+            else
+                break;
+	}
+        Machine.interrupt().restore(state);
 	KThread.currentThread().yield();
     }
 
@@ -45,24 +62,41 @@ public class Alarm {
      * @see	nachos.machine.Timer#getTime()
      */
     public void waitUntil(long x) {
-	// for now, cheat just to get something working (busy waiting is bad)
-	long wakeTime = Machine.timer().getTime() + x;
-	while (wakeTime > Machine.timer().getTime())
-	    KThread.yield();
+	//get the wake time and the current thread
+	boolean state = Machine.interrupt().disable();  
+   	KThread thread = KThread.currentThread();
+        long wakeTime = Machine.timer().getTime() + x;
+   	 
+   	//add the thread to the queue
+   	WaitThread waitThread = new WaitThread(thread, wakeTime);
+   	threadQueue.add(waitThread);
+   	 
+   	//put it to sleep to be woken up by the timer interrupt handler
+   	thread.sleep();
+	Machine.interrupt().restore(state);
+
     }
     
     public static class WaitThread implements Comparable {
-	int wakeTime;
+	long wakeTime;
 	KThread thread;
 
-	public WaitThread(KThread thread, int wakeTime) {
+	public WaitThread(KThread thread, long wakeTime) {
             this.thread = thread;
             this.wakeTime = wakeTime;
         }
         
+        public long getWakeTime(){
+            return wakeTime;
+        }
+        
+        public KThread getThread() {
+            return thread;
+        }
+        
         @Override
         public int compareTo(Object thread) {
-            return this.wakeTime - ((WaitThread)thread).wakeTime;
+            return (int)(this.wakeTime - ((WaitThread)thread).wakeTime);
         }
     }
     
@@ -98,5 +132,9 @@ public class Alarm {
         KThread t3 = new KThread(new WaitTest(1200,3));
         t3.fork();
         t3.join();
+        System.out.println("Performance Test: (wait time set at 7000ms)");
+        KThread t4 = new KThread(new WaitTest(7000,4));
+        t4.fork();
+        t4.join();
     }
 }
