@@ -141,10 +141,12 @@ public class Condition2 {
 //    }
 
     public static void SelfTest() {
+        System.out.println("Condition2.java Tests:");
+
         long time1 = Machine.timer().getTime();
         RunSingleBufferTest();
         long time2 = Machine.timer().getTime();
-        System.out.println("Ran in: " + (time2 - time1) + "ms");
+        System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
     }
 
     private Lock conditionLock;

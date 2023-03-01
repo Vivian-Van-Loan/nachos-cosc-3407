@@ -520,15 +520,17 @@ public class KThread {
     public static void selfTest() {
 	Lib.debug(dbgThread, "Enter KThread.selfTest");
 
+	System.out.println("KThread.java tests:");
+
 	long time1 = Machine.timer().getTime();
 	runPingTest();
 	long time2 = Machine.timer().getTime();
-	System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
+	System.out.println("Ran in: " + (time2 - time1) + "ms");
 
    	time1 = Machine.timer().getTime();
     	cascadeJoinTest();
     	time2 = Machine.timer().getTime();
-    	System.out.println("Ran in: " + (time2 - time1) + "ms\n\n");
+    	System.out.println("Ran in: " + (time2 - time1) + "ms");
 
     	time1 = Machine.timer().getTime();
 	multiJoinTest();
