@@ -54,4 +54,4 @@ test:
 ag:	$(patsubst ../ag/%.java,nachos/ag/%.class,$(wildcard ../ag/*.java))
 
 run:
-	../bin/nachos
+	../bin/nachos -d ma
