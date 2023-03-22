@@ -5,6 +5,7 @@ import nachos.threads.*;
 import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.LinkedList;
 
 /**
  * Encapsulates the state of a user process that is not contained in its
@@ -25,6 +26,8 @@ public class UserProcess {
     public UserProcess() {
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
+        openFiles = new OpenFile[16];
+        pid = UserKernel.pid;
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
     }
@@ -338,11 +341,143 @@ public class UserProcess {
      * Handle the halt() system call.
      */
     private int handleHalt() {
+        if (this.pid != 0)
+		return -1;
+        
         Machine.halt();
 
         Lib.assertNotReached("Machine.halt() did not halt machine!");
         return 0;
     }
+    
+    int handleOpen(int name) {
+	//string length cannot be longer than 256
+	String Name = readVirtualMemoryString(name, 256);
+
+	//if the file doesnt exist, return an error
+	if(Name == null)
+		return -1;
+
+	OpenFile openFile = ThreadedKernel.fileSystem.open(Name, false);
+
+	return insertFileTable(openFile);
+
+    }
+
+    int handleCreat(int name) {
+	//if the file already exists, just open it
+	int flag = handleOpen(name);
+	if(flag != -1)
+		return flag;
+
+	//if not, need to create a new file
+	String Name = readVirtualMemoryString(name, 256);
+	OpenFile openFile = ThreadedKernel.fileSystem.open(Name, true);
+	return insertFileTable(openFile);
+    }
+
+    int handleRead(int desc, int buffer, int count) {
+	//return -1 if any invalid values are inputted
+	if (desc >= openFiles.length || desc < 0 || buffer < 0)
+		return -1;
+	OpenFile openFile = openFiles[desc];
+	if (openFile == null)
+		return -1;
+
+	byte[] Buffer = new byte[pageSize];
+	int numReadBytes = 0;
+	int startingPos = buffer;
+	int readCount = count;
+	int fileLength = openFile.length();
+
+	while(readCount != 0 && fileLength != 0) {
+		int numToRead = Math.min(readCount, Buffer.length);
+		int read = openFile.read(Buffer, 0, numToRead);
+		int write = writeVirtualMemory(startingPos, Buffer, 0, read);
+
+		if(read < 0 || read != write)
+			return -1;
+
+		numReadBytes += read;
+		startingPos += read;
+		readCount -= read;
+		fileLength -= read;
+	}
+
+	return count - readCount;
+    }
+
+    int handleWrite(int desc, int buffer, int count) {
+	//return -1 if any invalid values are inputted
+	if (desc >= openFiles.length || desc < 0 || buffer < 0)
+		return -1;
+	OpenFile openFile = openFiles[desc];
+	if (openFile == null)
+		return -1;
+
+	byte[] Buffer = new byte[pageSize];
+	int numWriteBytes = 0;
+	int startingPos = buffer;
+	int writeCount = count;
+
+	while(writeCount != 0) {
+		int numToWrite = Math.min(writeCount, Buffer.length);
+		int write = openFile.write(Buffer, 0, numToWrite);
+		int read = readVirtualMemory(startingPos, Buffer, 0, write);
+
+		if(write < 0 || read != write)
+			return -1;
+
+		numWriteBytes += write;
+		startingPos += write;
+		writeCount -= write;
+	}
+
+	if(writeCount != 0)
+		return -1;
+
+	return writeCount;
+    }
+
+    int insertFileTable(OpenFile openFile) {
+	if(openFile != null) {
+	
+		for(int i = 0; i < openFiles.length; ++i) {
+			if(openFiles[i] == null) {
+				openFiles[i] = openFile;
+				allOpenFiles.add(openFile.getName());
+				return i;
+			}
+		}
+	}
+	
+        return -1;
+    }
+
+    int handleClose (int desc) {
+        if (desc >= openFiles.length || desc < 0 || openFiles[desc] == null)
+            return -1;
+        openFiles[desc].close();
+        openFiles[desc] = null;
+        return 0;
+    }
+
+    int handleUnlink(int name) {
+	//get the name of the file and ensure its length is 256 or less
+	String Name = readVirtualMemoryString(name, 256);
+	//if the file doesnt exist, return an error
+	if(Name == null)
+		return -1;
+
+	//do not delete the file while it is open
+	while(isOpen(Name)) {}
+
+	boolean flag = ThreadedKernel.fileSystem.remove(Name);
+	if(flag)
+		return 0;
+	else
+		return -1;
+    } 
 
     private int handleExit(int status) {
         //todo
@@ -359,31 +494,6 @@ public class UserProcess {
         return 0;
     }
 
-    private int handleCreate(String name) {
-        //todo
-        return 0;
-    }
-
-    private int handleOpen(String name) {
-        //todo
-        return 0;
-    }
-
-    private int handleRead(int fd, int bufPtr, int size) {
-        //todo
-        return 0;
-    }
-
-    private int handleWrite(int fd, int bufPtr, int size) {
-        //todo
-        return 0;
-    }
-
-    private int handleClose(int fd) {
-        //todo
-        return 0;
-    }
-
     private int handleUnlink(String name) {
         //todo
         return 0;
@@ -394,7 +504,7 @@ public class UserProcess {
         syscallExit = 1,
         syscallExec = 2,
         syscallJoin = 3,
-        syscallCreate = 4,
+        syscallCreat = 4,
         syscallOpen = 5,
         syscallRead = 6,
         syscallWrite = 7,
@@ -440,10 +550,10 @@ public class UserProcess {
                 return handleExec(readVirtualMemoryString(a0, 256), a1, a2);
             case syscallJoin:
                 return handleJoin(a0, a1);
-            case syscallCreate:
-                return handleCreate(readVirtualMemoryString(a0, 256));
+            case syscallCreat:
+                return handleCreat(a0);
             case syscallOpen:
-                return handleOpen(readVirtualMemoryString(a0, 256));
+                return handleOpen(a0);
             case syscallRead:
                 return handleRead(a0, a1, a2);
             case syscallWrite:
@@ -489,6 +599,14 @@ public class UserProcess {
                 Lib.assertNotReached("Unexpected exception");
         }
     }
+    
+    boolean isOpen(String name) {
+	for(String file : allOpenFiles){
+		if (file.equals(name))
+			return true;
+	}
+	return false;
+    }
 
     /**
      * The program being run by this process.
@@ -511,6 +629,10 @@ public class UserProcess {
 
     private int initialPC, initialSP;
     private int argc, argv;
+    private int pid;
+    
+    protected OpenFile[] openFiles;
+    static protected LinkedList<String> allOpenFiles = new LinkedList<String>();
 
     private static final int pageSize = Processor.pageSize;
     private static final char dbgProcess = 'a';
