@@ -2,9 +2,9 @@ package nachos.userprog;
 
 import nachos.machine.*;
 import nachos.threads.*;
-import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
 import java.util.LinkedList;
 
 /**
@@ -27,9 +27,12 @@ public class UserProcess {
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
         openFiles = new OpenFile[16];
-        pid = UserKernel.pid;
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+        boolean intStatus = Machine.interrupt().disable();
+        pid = pidCounter++;
+        numAlive++;
+        Machine.interrupt().restore(intStatus);
     }
 
     /**
@@ -479,19 +482,72 @@ public class UserProcess {
 		return -1;
     } 
 
-    private int handleExit(int status) {
-        //todo
-        return 0;
+    private int handleExit(int exitValue) {
+        unloadSections();
+        for (int i = 0; i < openFiles.length; i++)
+            handleClose(i); //close all open files
+        parentProc.infoSem.P();
+        Tuple4<UserProcess, Semaphore, Integer, Integer> info = parentProc.childInfo.get(this.pid);
+        info.third = exitValue;
+        info.fourth = 1; //exited normally
+        info.second.V(); //wake up any procs joined to this one
+        parentProc.infoSem.V();
+        boolean intStatus = Machine.interrupt().disable();
+        int newNumAlive = --numAlive;
+        Machine.interrupt().restore(intStatus);
+        if (newNumAlive == 0) {
+            Machine.halt(); //last process kills system
+        } else {
+            UThread.finish();
+        //This should loop through all threads for the proc and finish them
+        //but atm we can’t actually spawn new threads,
+        //so there’s only 1 per proc
+        }
+        return 0; //Unreachable
     }
 
-    private int handleExec(String name, int argc, int argvPtr) {
-        //todo
-        return 0;
+    private int handleExec(int namePtr, int argc, int argvPtr) {
+        String name = readVirtualMemoryString(namePtr, 256);
+        if (argc < 0 || name == null || !name.endsWith(".coff"))//check errors
+            return -1;
+        String argv[] = new String[argc];
+        for (int i = 0; i < argc; i++) {
+            byte ptr[] = new byte[4];
+            int numRead = readVirtualMemory(argvPtr + i * 4, ptr);
+            if (numRead != 4) {
+                return -1;
+            }
+            argv[i] = readVirtualMemoryString(Lib.bytesToInt(ptr, 0), 256);
+            if (argv[i] == null)
+                return -1;
+        }
+        UserProcess child = new UserProcess();
+        child.parentProc = this;
+        child.insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
+        child.insertFileTable(UserKernel.console.openForWriting()); //STDOUT,fd1
+        if (child.execute(name, argv)) {
+            infoSem.P();
+            childInfo.put(child.pid, new Tuple4<>(child, new Semaphore(0), -1, 0));
+            infoSem.V();
+            return child.pid;
+        }
+        return -1;
     }
 
-    private int handleJoin(int pid, int statusPtr) {
-        //todo
-        return 0;
+    private int handleJoin(int targetPID, int statusPtr) {
+        infoSem.P();
+        Tuple4<UserProcess, Semaphore, Integer, Integer> info = childInfo.get(targetPID); //Java’s objects by reference
+        //means this always has the correct data
+        infoSem.V();
+        if (info == null)
+            return -1;
+        info.second.P(); //2nd position, semaphore
+        info.second.V(); //Info is only ever written to once so we
+        //don’t actually need to keep the lock as all reads are safe now
+        byte[] exitValue = Lib.bytesFromInt(info.third); //3rd pos, exit value
+        if (writeVirtualMemory(statusPtr, exitValue) < 4)
+            return -1;
+        return info.fourth; //If the exit was normal or not
     }
 
     private int handleUnlink(String name) {
@@ -547,7 +603,7 @@ public class UserProcess {
             case syscallExit:
                 return handleExit(a0);
             case syscallExec:
-                return handleExec(readVirtualMemoryString(a0, 256), a1, a2);
+                return handleExec(a0, a1, a2);
             case syscallJoin:
                 return handleJoin(a0, a1);
             case syscallCreat:
@@ -608,6 +664,19 @@ public class UserProcess {
 	return false;
     }
 
+    private static class Tuple4<A, B, C, D> {
+        A first;
+        B second;
+        C third;
+        D fourth;
+        Tuple4(A first, B second, C third, D fourth) {
+            this.first = first;
+            this.second = second;
+            this.third = third;
+            this.fourth = fourth;
+        }
+    }
+
     /**
      * The program being run by this process.
      */
@@ -630,7 +699,12 @@ public class UserProcess {
     private int initialPC, initialSP;
     private int argc, argv;
     private int pid;
-    
+    private static int pidCounter = 0;
+    private static int numAlive = 0;
+    private HashMap<Integer, Tuple4<UserProcess, Semaphore, Integer, Integer>> childInfo = new HashMap<>();
+    Semaphore infoSem = new Semaphore(0);
+    UserProcess parentProc;
+
     protected OpenFile[] openFiles;
     static protected LinkedList<String> allOpenFiles = new LinkedList<String>();
 
