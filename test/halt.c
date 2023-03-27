@@ -10,11 +10,14 @@
  *	be careful to allocate a big enough stack to hold the automatics!
  */
 
+#include "stdio.h"
+
 #include "syscall.h"
 
 int
 main()
 {
+    printf("Calling halt!\n");
     halt();
     /* not reached */
 }

@@ -29,6 +29,8 @@ public class UserProcess {
         openFiles = new OpenFile[16];
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+        insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
+        insertFileTable(UserKernel.console.openForWriting()); //STDOUT,fd1
         boolean intStatus = Machine.interrupt().disable();
         pid = pidCounter++;
         numAlive++;
@@ -345,119 +347,122 @@ public class UserProcess {
      */
     private int handleHalt() {
         if (this.pid != 0)
-		return -1;
-        
+            return -1;
+
         Machine.halt();
 
         Lib.assertNotReached("Machine.halt() did not halt machine!");
         return 0;
     }
-    
+
     int handleOpen(int name) {
-	//string length cannot be longer than 256
-	String Name = readVirtualMemoryString(name, 256);
+        //string length cannot be longer than 256
+        String Name = readVirtualMemoryString(name, 256);
 
-	//if the file doesnt exist, return an error
-	if(Name == null)
-		return -1;
+        //if the file doesnt exist, return an error
+        if (Name == null)
+            return -1;
 
-	OpenFile openFile = ThreadedKernel.fileSystem.open(Name, false);
+        OpenFile openFile = ThreadedKernel.fileSystem.open(Name, false);
 
-	return insertFileTable(openFile);
+        return insertFileTable(openFile);
 
     }
 
     int handleCreat(int name) {
-	//if the file already exists, just open it
-	int flag = handleOpen(name);
-	if(flag != -1)
-		return flag;
+        //if the file already exists, just open it
+        int flag = handleOpen(name);
+        if (flag != -1)
+            return flag;
 
-	//if not, need to create a new file
-	String Name = readVirtualMemoryString(name, 256);
-	OpenFile openFile = ThreadedKernel.fileSystem.open(Name, true);
-	return insertFileTable(openFile);
+        //if not, need to create a new file
+        String Name = readVirtualMemoryString(name, 256);
+        OpenFile openFile = ThreadedKernel.fileSystem.open(Name, true);
+        return insertFileTable(openFile);
     }
 
     int handleRead(int desc, int buffer, int count) {
-	//return -1 if any invalid values are inputted
-	if (desc >= openFiles.length || desc < 0 || buffer < 0)
-		return -1;
-	OpenFile openFile = openFiles[desc];
-	if (openFile == null)
-		return -1;
+        //return -1 if any invalid values are inputted
+        if (desc >= openFiles.length || desc < 0 || buffer < 0)
+            return -1;
+        OpenFile openFile = openFiles[desc];
+        if (openFile == null)
+            return -1;
 
-	byte[] Buffer = new byte[pageSize];
-	int numReadBytes = 0;
-	int startingPos = buffer;
-	int readCount = count;
-	int fileLength = openFile.length();
+        byte[] Buffer = new byte[pageSize];
+        int numReadBytes = 0;
+        int startingPos = buffer;
+        int readCount = count;
+        int fileLength = openFile.length();
 
-	while(readCount != 0 && fileLength != 0) {
-		int numToRead = Math.min(readCount, Buffer.length);
-		int read = openFile.read(Buffer, 0, numToRead);
-		int write = writeVirtualMemory(startingPos, Buffer, 0, read);
+        while (readCount != 0 && fileLength != 0) {
+            int numToRead = Math.min(readCount, Buffer.length);
+            int read = openFile.read(Buffer, 0, numToRead);
+            int write = writeVirtualMemory(startingPos, Buffer, 0, read);
 
-		if(read < 0 || read != write)
-			return -1;
+            if (read < 0 || read != write)
+                return -1;
 
-		numReadBytes += read;
-		startingPos += read;
-		readCount -= read;
-		fileLength -= read;
-	}
+            numReadBytes += read;
+            startingPos += read;
+            readCount -= read;
+            fileLength -= read;
+        }
 
-	return count - readCount;
+        return count - readCount;
     }
 
     int handleWrite(int desc, int buffer, int count) {
-	//return -1 if any invalid values are inputted
-	if (desc >= openFiles.length || desc < 0 || buffer < 0)
-		return -1;
-	OpenFile openFile = openFiles[desc];
-	if (openFile == null)
-		return -1;
+//        System.out.println("handleWrite: " + desc + ", " + buffer + ", " + count);
+        //return -1 if any invalid values are inputted
+        if (desc >= openFiles.length || desc < 0 || buffer < 0)
+            return -1;
+        OpenFile openFile = openFiles[desc];
+        if (openFile == null) {
+            System.out.println("file is null!");
+            return -1;
+        }
 
-	byte[] Buffer = new byte[pageSize];
-	int numWriteBytes = 0;
-	int startingPos = buffer;
-	int writeCount = count;
+        byte[] Buffer = new byte[pageSize];
+        int numWriteBytes = 0;
+        int startingPos = buffer;
+        int writeCount = count;
 
-	while(writeCount != 0) {
-		int numToWrite = Math.min(writeCount, Buffer.length);
-		int write = openFile.write(Buffer, 0, numToWrite);
-		int read = readVirtualMemory(startingPos, Buffer, 0, write);
+        while (writeCount != 0) {
+            int numToWrite = Math.min(writeCount, Buffer.length);
+            int read = readVirtualMemory(startingPos, Buffer, 0, writeCount);
+            int write = openFile.write(Buffer, 0, numToWrite);
 
-		if(write < 0 || read != write)
-			return -1;
+            if (write < 0 || read != write) {
+                System.out.println("Failed to write in loop");
+                return -1;
+            }
 
-		numWriteBytes += write;
-		startingPos += write;
-		writeCount -= write;
-	}
+            numWriteBytes += write;
+            startingPos += write;
+            writeCount -= write;
+        }
 
-	if(writeCount != 0)
-		return -1;
-
-	return writeCount;
+//    System.out.println("Wrote without issue");
+        return writeCount;
     }
 
     int insertFileTable(OpenFile openFile) {
-	if(openFile != null) {
-	
-		for(int i = 0; i < openFiles.length; ++i) {
-			if(openFiles[i] == null) {
-				openFiles[i] = openFile;
-				allOpenFiles.add(openFile.getName());
-				return i;
-			}
-		}
-	}
-	
+        if (openFile != null) {
+
+            for (int i = 0; i < openFiles.length; ++i) {
+                if (openFiles[i] == null) {
+                    openFiles[i] = openFile;
+                    allOpenFiles.add(openFile.getName());
+                    return i;
+                }
+            }
+        }
+
         return -1;
     }
 
-    int handleClose (int desc) {
+    int handleClose(int desc) {
         if (desc >= openFiles.length || desc < 0 || openFiles[desc] == null)
             return -1;
         openFiles[desc].close();
@@ -466,32 +471,35 @@ public class UserProcess {
     }
 
     int handleUnlink(int name) {
-	//get the name of the file and ensure its length is 256 or less
-	String Name = readVirtualMemoryString(name, 256);
-	//if the file doesnt exist, return an error
-	if(Name == null)
-		return -1;
+        //get the name of the file and ensure its length is 256 or less
+        String Name = readVirtualMemoryString(name, 256);
+        //if the file doesnt exist, return an error
+        if (Name == null)
+            return -1;
 
-	//do not delete the file while it is open
-	while(isOpen(Name)) {}
+        //do not delete the file while it is open
+        while (isOpen(Name)) {
+        }
 
-	boolean flag = ThreadedKernel.fileSystem.remove(Name);
-	if(flag)
-		return 0;
-	else
-		return -1;
-    } 
+        boolean flag = ThreadedKernel.fileSystem.remove(Name);
+        if (flag)
+            return 0;
+        else
+            return -1;
+    }
 
     private int handleExit(int exitValue) {
         unloadSections();
         for (int i = 0; i < openFiles.length; i++)
             handleClose(i); //close all open files
-        parentProc.infoSem.P();
-        Tuple4<UserProcess, Semaphore, Integer, Integer> info = parentProc.childInfo.get(this.pid);
-        info.third = exitValue;
-        info.fourth = 1; //exited normally
-        info.second.V(); //wake up any procs joined to this one
-        parentProc.infoSem.V();
+        if (parentProc != null) {
+            parentProc.infoSem.P();
+            Tuple4<UserProcess, Semaphore, Integer, Integer> info = parentProc.childInfo.get(this.pid);
+            info.third = exitValue;
+            info.fourth = 1; //exited normally
+            info.second.V(); //wake up any procs joined to this one
+            parentProc.infoSem.V();
+        }
         boolean intStatus = Machine.interrupt().disable();
         int newNumAlive = --numAlive;
         Machine.interrupt().restore(intStatus);
@@ -499,9 +507,9 @@ public class UserProcess {
             Machine.halt(); //last process kills system
         } else {
             UThread.finish();
-        //This should loop through all threads for the proc and finish them
-        //but atm we can’t actually spawn new threads,
-        //so there’s only 1 per proc
+            //This should loop through all threads for the proc and finish them
+            //but atm we can’t actually spawn new threads,
+            //so there’s only 1 per proc
         }
         return 0; //Unreachable
     }
@@ -523,8 +531,6 @@ public class UserProcess {
         }
         UserProcess child = new UserProcess();
         child.parentProc = this;
-        child.insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
-        child.insertFileTable(UserKernel.console.openForWriting()); //STDOUT,fd1
         if (child.execute(name, argv)) {
             infoSem.P();
             childInfo.put(child.pid, new Tuple4<>(child, new Semaphore(0), -1, 0));
@@ -596,6 +602,7 @@ public class UserProcess {
      * @return the value to be returned to the user.
      */
     public int handleSyscall(int syscall, int a0, int a1, int a2, int a3) {
+//        System.out.println("Syscall: " + syscall);
         switch (syscall) {
             case syscallHalt:
                 //todo: this can only be called by the root/first process
@@ -655,13 +662,13 @@ public class UserProcess {
                 Lib.assertNotReached("Unexpected exception");
         }
     }
-    
+
     boolean isOpen(String name) {
-	for(String file : allOpenFiles){
-		if (file.equals(name))
-			return true;
-	}
-	return false;
+        for (String file : allOpenFiles) {
+            if (file.equals(name))
+                return true;
+        }
+        return false;
     }
 
     private static class Tuple4<A, B, C, D> {
@@ -669,6 +676,7 @@ public class UserProcess {
         B second;
         C third;
         D fourth;
+
         Tuple4(A first, B second, C third, D fourth) {
             this.first = first;
             this.second = second;
