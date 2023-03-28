@@ -404,7 +404,7 @@ public class UserProcess {
 //            System.out.println(readCount);
             int numToRead = Math.min(readCount, Buffer.length);
 //            System.out.println(numToRead);
-            int read = openFile.read(Buffer, openFiles[desc].offset, numToRead);
+            int read = openFile.read(Buffer, 0, numToRead);
 //            System.out.println(read);
             int write = writeVirtualMemory(startingPos, Buffer, 0, read);
 
@@ -415,7 +415,6 @@ public class UserProcess {
             startingPos += read;
             readCount -= read;
             fileLength -= read;
-            ++openFiles[desc].offset;
             if (read == 0)
                 break;
         }
