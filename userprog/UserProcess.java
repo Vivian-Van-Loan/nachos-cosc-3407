@@ -472,14 +472,16 @@ public class UserProcess {
 
     int insertFileTable(OpenFile openFile) {
         if (openFile != null) {
-
             for (int i = 0; i < openFiles.length; ++i) {
                 if (openFiles[i] == null) {
                     openFiles[i] = new FileTriple(openFile, 0, 0);
-                    if (isOpen(openFile.getName()))
-                       incrementInstances(openFile);
-                    else
-                        allOpenFiles.add(new GlobalFilePair(openFile.getName(), 1));
+                    if (checkOpen(openFile.getName(), false))
+                        incrementInstances(openFile);
+                    else {
+                        allOpenFilesSem.P();
+                        allOpenFiles.add(new GlobalFileTriple(openFile.getName()));
+                        allOpenFilesSem.V();
+                    }
                     return i;
                 }
             }
@@ -500,12 +502,15 @@ public class UserProcess {
     int handleUnlink(int name) {
         //get the name of the file and ensure its length is 256 or less
         String Name = readVirtualMemoryString(name, 256);
-        //if the file doesnt exist or its currently open, return an error
-        if (Name == null || isOpen(Name))
+        //if the file doesn't exist return an error
+        if (Name == null)
             return -1;
+        //If the file is currently open, mark that it needs to be unlinked when closed, and return
+        if (checkOpen(Name, true)) {
+            return 0;
+        }
 
-        boolean flag = ThreadedKernel.fileSystem.remove(Name);
-        if (flag)
+        if (ThreadedKernel.fileSystem.remove(Name))
             return 0;
         else
             return -1;
@@ -531,8 +536,8 @@ public class UserProcess {
         } else {
             UThread.finish();
             //This should loop through all threads for the proc and finish them
-            //but atm we can’t actually spawn new threads,
-            //so there’s only 1 per proc
+            //but atm we can't actually spawn new threads,
+            //so there's only 1 per proc
         }
         return 0; //Unreachable
     }
@@ -565,14 +570,14 @@ public class UserProcess {
 
     private int handleJoin(int targetPID, int statusPtr) {
         infoSem.P();
-        Tuple4<UserProcess, Semaphore, Integer, Integer> info = childInfo.get(targetPID); //Java’s objects by reference
+        Tuple4<UserProcess, Semaphore, Integer, Integer> info = childInfo.get(targetPID); //Java's objects by reference
         //means this always has the correct data
         infoSem.V();
         if (info == null)
             return -1;
         info.second.P(); //2nd position, semaphore
         info.second.V(); //Info is only ever written to once so we
-        //don’t actually need to keep the lock as all reads are safe now
+        //don't actually need to keep the lock as all reads are safe now
         byte[] exitValue = Lib.bytesFromInt(info.third); //3rd pos, exit value
         if (writeVirtualMemory(statusPtr, exitValue) < 4)
             return -1;
@@ -716,11 +721,17 @@ public class UserProcess {
         }
     }
 
-    boolean isOpen(String name) {
-        for (GlobalFilePair file : allOpenFiles) {
-            if (file.fileName.equals(name))
+    boolean checkOpen(String name, boolean addCloseFlag) {
+        allOpenFilesSem.P();
+        for (GlobalFileTriple fileTriple : allOpenFiles) {
+            if (fileTriple.fileName.equals(name)) {
+                if (addCloseFlag)
+                    fileTriple.unlinkOnClose = true;
+                allOpenFilesSem.V();
                 return true;
+            }
         }
+        allOpenFilesSem.V();
         return false;
     }
 
@@ -740,22 +751,27 @@ public class UserProcess {
     
     public void incrementInstances (OpenFile openFile) {
         String name = openFile.getName();
-           for (GlobalFilePair file : allOpenFiles) {
+        allOpenFilesSem.P();
+        for (GlobalFileTriple file : allOpenFiles) {
             if (file.fileName.equals(name))
                 ++file.instances;
-        } 
+        }
+        allOpenFilesSem.V();
     }
     
     public void decrementInstances (OpenFile openFile, int desc) {
         String name = openFile.getName();
-        for (GlobalFilePair file : allOpenFiles) {
-            if (file.fileName.equals(name))
-                --file.instances;
-            if(file.instances == 0) {
-                allOpenFiles.remove(file);
-                handleUnlink(desc);
+        allOpenFilesSem.P();
+        for (GlobalFileTriple fileTriple : allOpenFiles) {
+            if (fileTriple.fileName.equals(name))
+                --fileTriple.instances;
+            if (fileTriple.instances == 0) {
+                allOpenFiles.remove(fileTriple);
+                if (fileTriple.unlinkOnClose)
+                    ThreadedKernel.fileSystem.remove(fileTriple.fileName);
             }
         }
+        allOpenFilesSem.V();
     }
 
     /**
@@ -783,11 +799,12 @@ public class UserProcess {
     private static int pidCounter = 0;
     private static int numAlive = 0;
     private HashMap<Integer, Tuple4<UserProcess, Semaphore, Integer, Integer>> childInfo = new HashMap<>();
-    Semaphore infoSem = new Semaphore(0);
+    Semaphore infoSem = new Semaphore(1);
     UserProcess parentProc;
 
     protected FileTriple[] openFiles;
-    static protected LinkedList<GlobalFilePair> allOpenFiles = new LinkedList<GlobalFilePair>();
+    static protected LinkedList<GlobalFileTriple> allOpenFiles = new LinkedList<>();
+    static protected Semaphore allOpenFilesSem = new Semaphore(1);
     
     protected static class FileTriple {
         protected OpenFile file;
@@ -801,15 +818,14 @@ public class UserProcess {
         }
     }
     
-    protected static class GlobalFilePair {
+    protected static class GlobalFileTriple {
         protected String fileName;
-        protected int instances;
+        protected int instances = 1;
+        protected boolean unlinkOnClose = false;
         
-        GlobalFilePair(String fileName, int instances) {
+        GlobalFileTriple(String fileName) {
             this.fileName = fileName;
-            this.instances = instances;
         }
-        
     }
 
     private static final int pageSize = Processor.pageSize;
