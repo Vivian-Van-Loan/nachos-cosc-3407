@@ -26,7 +26,7 @@ public class UserProcess {
     public UserProcess() {
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
-        openFiles = new filePair[16];
+        openFiles = new FileTriple[16];
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
@@ -392,6 +392,8 @@ public class UserProcess {
         if (openFile == null)
             return -1;
 
+        openFile.seek(openFiles[desc].readOffset);
+
         byte[] Buffer = new byte[pageSize];
         int numReadBytes = 0;
         int startingPos = buffer;
@@ -400,7 +402,7 @@ public class UserProcess {
         
         System.out.println("fileLength: " + openFile.length());
 
-        while (readCount != 0 && fileLength != 0 && openFiles[desc].offset <= fileLength) {
+        while (readCount != 0 && fileLength != 0) {
 //            System.out.println(readCount);
             int numToRead = Math.min(readCount, Buffer.length);
 //            System.out.println(numToRead);
@@ -413,6 +415,7 @@ public class UserProcess {
 
             numReadBytes += read;
             startingPos += read;
+            openFiles[desc].readOffset += read;
             readCount -= read;
             fileLength -= read;
             if (read == 0)
@@ -429,9 +432,11 @@ public class UserProcess {
             return -1;
         OpenFile openFile = openFiles[desc].file;
         if (openFile == null) {
-            System.out.println("file is null!");
+//            System.out.println("file is null!");
             return -1;
         }
+
+        openFile.seek(openFiles[desc].writeOffset);
 
         byte[] Buffer = new byte[pageSize];
         int numWriteBytes = 0;
@@ -446,7 +451,7 @@ public class UserProcess {
                 System.out.println("Failed to read buffer");
                 return -1;
             }
-            int write = openFile.write(Buffer, openFiles[desc].offset, numToWrite);
+            int write = openFile.write(Buffer, 0, numToWrite);
 //            System.out.println(read + " : " + write);
 
             if (write < 0 || read != write) {
@@ -456,8 +461,8 @@ public class UserProcess {
 
             numWriteBytes += write;
             startingPos += write;
+            openFiles[desc].writeOffset += write;
             writeCount -= write;
-            ++openFiles[desc].offset;
         }
 
 //        System.out.println("Wrote without issue");
@@ -470,7 +475,7 @@ public class UserProcess {
 
             for (int i = 0; i < openFiles.length; ++i) {
                 if (openFiles[i] == null) {
-                    openFiles[i] = new filePair(openFile, 0);
+                    openFiles[i] = new FileTriple(openFile, 0, 0);
                     allOpenFiles.add(openFile.getName());
                     return i;
                 }
@@ -621,37 +626,62 @@ public class UserProcess {
      */
     public int handleSyscall(int syscall, int a0, int a1, int a2, int a3) {
 //        System.out.println("Syscall: " + syscall);
+        if (Lib.test('m') || Lib.test('M')) {
+            switch (syscall) {
+                case syscallHalt:
+                    System.out.println("Syscall: Halt");
+                    break;
+                case syscallExit:
+                    System.out.println("Syscall: Exit");
+                    break;
+                case syscallExec:
+                    System.out.println("Syscall: Exec");
+                    break;
+                case syscallJoin:
+                    System.out.println("Syscall: Join");
+                    break;
+                case syscallCreat:
+                    System.out.println("Syscall: Creat");
+                    break;
+                case syscallOpen:
+                    System.out.println("Syscall: Open");
+                    break;
+                case syscallRead:
+                    System.out.println("Syscall: Read");
+                    break;
+                case syscallWrite:
+                    System.out.println("Syscall: Write");
+                    break;
+                case syscallClose:
+                    System.out.println("Syscall: Close");
+                    break;
+                case syscallUnlink:
+                    System.out.println("Syscall: Unlink");
+                    break;
+            }
+        }
+
+
         switch (syscall) {
             case syscallHalt:
-                System.out.println("Syscall: Halt");
-                //todo: this can only be called by the root/first process
                 return handleHalt();
             case syscallExit:
-                System.out.println("Syscall: Exit");
                 return handleExit(a0);
             case syscallExec:
-                System.out.println("Syscall: Exec");
                 return handleExec(a0, a1, a2);
             case syscallJoin:
-                System.out.println("Syscall: Join");
                 return handleJoin(a0, a1);
             case syscallCreat:
-                System.out.println("Syscall: Creat");
                 return handleCreat(a0);
             case syscallOpen:
-                System.out.println("Syscall: Open");
                 return handleOpen(a0);
             case syscallRead:
-                System.out.println("Syscall: Read");
                 return handleRead(a0, a1, a2);
             case syscallWrite:
-                System.out.println("Syscall: Write");
                 return handleWrite(a0, a1, a2);
             case syscallClose:
-                System.out.println("Syscall: Close");
                 return handleClose(a0);
             case syscallUnlink:
-                System.out.println("Syscall: Unlink");
                 return handleUnlink(readVirtualMemoryString(a0, 256));
 
             default:
@@ -741,16 +771,18 @@ public class UserProcess {
     Semaphore infoSem = new Semaphore(0);
     UserProcess parentProc;
 
-    protected filePair[] openFiles;
+    protected FileTriple[] openFiles;
     static protected LinkedList<String> allOpenFiles = new LinkedList<String>();
     
-    protected class filePair {
+    protected static class FileTriple {
         protected OpenFile file;
-        protected int offset;
-        
-        filePair(OpenFile file, int offset) {
+        protected int writeOffset;
+        protected int readOffset;
+
+        FileTriple(OpenFile file, int writeOffset, int readOffset) {
             this.file = file;
-            this.offset = offset;
+            this.writeOffset = writeOffset;
+            this.readOffset = readOffset;
         }
     }
 

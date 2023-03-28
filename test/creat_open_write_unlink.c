@@ -15,10 +15,6 @@ int main() {
         printf("Failed to write all of loremIpsum, only wrote: %d bytes\n", written);
         exit(1);
     }
-    close(fd);
-    fd = open("cowut.bin");
-    write(fd, "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 30);
-    exit(1);
     int readIn = read(fd, loremIpsumRead, sizeof(loremIpsumRead) - 1);
     if (readIn != (sizeof(loremIpsumRead) - 1)) {
         printf("Failed to read all of loremIpsumRead, only read: %d bytes\n", readIn);
@@ -34,4 +30,18 @@ int main() {
         printf("Failed to unlink\n");
         exit(1);
     }
+
+    char printfBuf[256];
+    unsigned int size = 0;
+    unsigned int i = 0;
+    while (size + sizeof(printfBuf) - 1 < sizeof(loremIpsumRead)) {
+        memcpy(printfBuf, loremIpsumRead + size, sizeof(printfBuf) - 1);
+        printfBuf[255] = 0;
+        size += sizeof(printfBuf) - 1;
+        printf("%s", printfBuf);
+        i++;
+    }
+    memset(printfBuf, 0, sizeof(printfBuf));
+    memcpy(printfBuf, loremIpsumRead + size, sizeof(printfBuf) - (sizeof(loremIpsumRead) - size));
+    printf("%s", printfBuf);
 }
