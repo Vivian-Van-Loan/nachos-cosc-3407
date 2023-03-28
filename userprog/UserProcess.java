@@ -501,8 +501,10 @@ public class UserProcess {
             return -1;
 
         //do not delete the file while it is open
+        System.out.println("unlink pre loop");
         while (isOpen(Name)) {
         }
+        System.out.println("Unlink post loop");
 
         boolean flag = ThreadedKernel.fileSystem.remove(Name);
         if (flag)
@@ -577,11 +579,6 @@ public class UserProcess {
         if (writeVirtualMemory(statusPtr, exitValue) < 4)
             return -1;
         return info.fourth; //If the exit was normal or not
-    }
-
-    private int handleUnlink(String name) {
-        //todo
-        return 0;
     }
 
     private static final int
@@ -682,7 +679,7 @@ public class UserProcess {
             case syscallClose:
                 return handleClose(a0);
             case syscallUnlink:
-                return handleUnlink(readVirtualMemoryString(a0, 256));
+                return handleUnlink(a0);
 
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
