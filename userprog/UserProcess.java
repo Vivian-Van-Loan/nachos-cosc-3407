@@ -26,7 +26,7 @@ public class UserProcess {
     public UserProcess() {
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
-        openFiles = new OpenFile[16];
+        openFiles = new filePair[16];
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
@@ -388,7 +388,7 @@ public class UserProcess {
         //return -1 if any invalid values are inputted
         if (desc >= openFiles.length || desc < 0 || buffer < 0)
             return -1;
-        OpenFile openFile = openFiles[desc];
+        OpenFile openFile = openFiles[desc].file;
         if (openFile == null)
             return -1;
 
@@ -397,13 +397,14 @@ public class UserProcess {
         int startingPos = buffer;
         int readCount = count;
         int fileLength = openFile.length();
+        
         System.out.println("fileLength: " + openFile.length());
 
-        while (readCount != 0 && fileLength != 0) {
+        while (readCount != 0 && fileLength != 0 && openFiles[desc].offset <= fileLength) {
 //            System.out.println(readCount);
             int numToRead = Math.min(readCount, Buffer.length);
 //            System.out.println(numToRead);
-            int read = openFile.read(Buffer, 0, numToRead);
+            int read = openFile.read(Buffer, openFiles[desc].offset, numToRead);
 //            System.out.println(read);
             int write = writeVirtualMemory(startingPos, Buffer, 0, read);
 
@@ -414,6 +415,7 @@ public class UserProcess {
             startingPos += read;
             readCount -= read;
             fileLength -= read;
+            ++openFiles[desc].offset;
             if (read == 0)
                 break;
         }
@@ -426,7 +428,7 @@ public class UserProcess {
         //return -1 if any invalid values are inputted
         if (desc >= openFiles.length || desc < 0 || buffer < 0)
             return -1;
-        OpenFile openFile = openFiles[desc];
+        OpenFile openFile = openFiles[desc].file;
         if (openFile == null) {
             System.out.println("file is null!");
             return -1;
@@ -445,7 +447,7 @@ public class UserProcess {
                 System.out.println("Failed to read buffer");
                 return -1;
             }
-            int write = openFile.write(Buffer, 0, numToWrite);
+            int write = openFile.write(Buffer, openFiles[desc].offset, numToWrite);
 //            System.out.println(read + " : " + write);
 
             if (write < 0 || read != write) {
@@ -456,9 +458,11 @@ public class UserProcess {
             numWriteBytes += write;
             startingPos += write;
             writeCount -= write;
+            ++openFiles[desc].offset;
         }
 
 //        System.out.println("Wrote without issue");
+        
         return count;
     }
 
@@ -467,7 +471,7 @@ public class UserProcess {
 
             for (int i = 0; i < openFiles.length; ++i) {
                 if (openFiles[i] == null) {
-                    openFiles[i] = openFile;
+                    openFiles[i] = new filePair(openFile, 0);
                     allOpenFiles.add(openFile.getName());
                     return i;
                 }
@@ -480,7 +484,7 @@ public class UserProcess {
     int handleClose(int desc) {
         if (desc >= openFiles.length || desc < 0 || openFiles[desc] == null)
             return -1;
-        openFiles[desc].close();
+        openFiles[desc].file.close();
         openFiles[desc] = null;
         return 0;
     }
@@ -738,8 +742,18 @@ public class UserProcess {
     Semaphore infoSem = new Semaphore(0);
     UserProcess parentProc;
 
-    protected OpenFile[] openFiles;
+    protected filePair[] openFiles;
     static protected LinkedList<String> allOpenFiles = new LinkedList<String>();
+    
+    protected class filePair {
+        protected OpenFile file;
+        protected int offset;
+        
+        filePair(OpenFile file, int offset) {
+            this.file = file;
+            this.offset = offset;
+        }
+    }
 
     private static final int pageSize = Processor.pageSize;
     private static final char dbgProcess = 'a';
