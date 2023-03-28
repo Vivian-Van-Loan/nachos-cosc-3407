@@ -476,7 +476,10 @@ public class UserProcess {
             for (int i = 0; i < openFiles.length; ++i) {
                 if (openFiles[i] == null) {
                     openFiles[i] = new FileTriple(openFile, 0, 0);
-                    allOpenFiles.add(openFile.getName());
+                    if (isOpen(openFile.getName()))
+                       incrementInstances(openFile);
+                    else
+                        allOpenFiles.add(new GlobalFilePair(openFile.getName(), 1));
                     return i;
                 }
             }
@@ -488,6 +491,7 @@ public class UserProcess {
     int handleClose(int desc) {
         if (desc >= openFiles.length || desc < 0 || openFiles[desc] == null)
             return -1;
+        decrementInstances(openFiles[desc].file, desc);
         openFiles[desc].file.close();
         openFiles[desc] = null;
         return 0;
@@ -496,15 +500,9 @@ public class UserProcess {
     int handleUnlink(int name) {
         //get the name of the file and ensure its length is 256 or less
         String Name = readVirtualMemoryString(name, 256);
-        //if the file doesnt exist, return an error
-        if (Name == null)
+        //if the file doesnt exist or its currently open, return an error
+        if (Name == null || isOpen(Name))
             return -1;
-
-        //do not delete the file while it is open
-        System.out.println("unlink pre loop");
-        while (isOpen(Name)) {
-        }
-        System.out.println("Unlink post loop");
 
         boolean flag = ThreadedKernel.fileSystem.remove(Name);
         if (flag)
@@ -719,8 +717,8 @@ public class UserProcess {
     }
 
     boolean isOpen(String name) {
-        for (String file : allOpenFiles) {
-            if (file.equals(name))
+        for (GlobalFilePair file : allOpenFiles) {
+            if (file.fileName.equals(name))
                 return true;
         }
         return false;
@@ -737,6 +735,26 @@ public class UserProcess {
             this.second = second;
             this.third = third;
             this.fourth = fourth;
+        }
+    }
+    
+    public void incrementInstances (OpenFile openFile) {
+        String name = openFile.getName();
+           for (GlobalFilePair file : allOpenFiles) {
+            if (file.fileName.equals(name))
+                ++file.instances;
+        } 
+    }
+    
+    public void decrementInstances (OpenFile openFile, int desc) {
+        String name = openFile.getName();
+        for (GlobalFilePair file : allOpenFiles) {
+            if (file.fileName.equals(name))
+                --file.instances;
+            if(file.instances == 0) {
+                allOpenFiles.remove(file);
+                handleUnlink(desc);
+            }
         }
     }
 
@@ -769,7 +787,7 @@ public class UserProcess {
     UserProcess parentProc;
 
     protected FileTriple[] openFiles;
-    static protected LinkedList<String> allOpenFiles = new LinkedList<String>();
+    static protected LinkedList<GlobalFilePair> allOpenFiles = new LinkedList<GlobalFilePair>();
     
     protected static class FileTriple {
         protected OpenFile file;
@@ -781,6 +799,17 @@ public class UserProcess {
             this.writeOffset = writeOffset;
             this.readOffset = readOffset;
         }
+    }
+    
+    protected static class GlobalFilePair {
+        protected String fileName;
+        protected int instances;
+        
+        GlobalFilePair(String fileName, int instances) {
+            this.fileName = fileName;
+            this.instances = instances;
+        }
+        
     }
 
     private static final int pageSize = Processor.pageSize;
