@@ -136,8 +136,11 @@ public class UserProcess {
      * @return the number of bytes successfully transferred. -1 in event of an error.
      */
     public int readVirtualMemory(int vaddr, byte[] data, int offset, int length) {
-        if (!(offset >= 0 && length >= 0 && offset + length <= data.length))
+        if (!(offset >= 0 && length >= 0 && offset + length <= data.length)) {
+//            System.out.println((offset >= 0 && length >= 0) + " : " + (offset + length <= data.length));
+//            System.out.println("First thing failed: " + offset + ", " + length + ", " + (offset + length) + ", " + data.length);
             return -1;
+        }
 
         byte[] memory = Machine.processor().getMemory();
 
@@ -394,10 +397,14 @@ public class UserProcess {
         int startingPos = buffer;
         int readCount = count;
         int fileLength = openFile.length();
+        System.out.println("fileLength: " + openFile.length());
 
         while (readCount != 0 && fileLength != 0) {
+//            System.out.println(readCount);
             int numToRead = Math.min(readCount, Buffer.length);
+//            System.out.println(numToRead);
             int read = openFile.read(Buffer, 0, numToRead);
+//            System.out.println(read);
             int write = writeVirtualMemory(startingPos, Buffer, 0, read);
 
             if (read < 0 || read != write)
@@ -407,6 +414,8 @@ public class UserProcess {
             startingPos += read;
             readCount -= read;
             fileLength -= read;
+            if (read == 0)
+                break;
         }
 
         return count - readCount;
@@ -429,9 +438,15 @@ public class UserProcess {
         int writeCount = count;
 
         while (writeCount != 0) {
+//            System.out.println(Math.min(writeCount, Buffer.length));
             int numToWrite = Math.min(writeCount, Buffer.length);
-            int read = readVirtualMemory(startingPos, Buffer, 0, writeCount);
+            int read = readVirtualMemory(startingPos, Buffer, 0, numToWrite);
+            if (read == -1) {
+                System.out.println("Failed to read buffer");
+                return -1;
+            }
             int write = openFile.write(Buffer, 0, numToWrite);
+//            System.out.println(read + " : " + write);
 
             if (write < 0 || read != write) {
                 System.out.println("Failed to write in loop");
@@ -443,8 +458,8 @@ public class UserProcess {
             writeCount -= write;
         }
 
-//    System.out.println("Wrote without issue");
-        return writeCount;
+//        System.out.println("Wrote without issue");
+        return count;
     }
 
     int insertFileTable(OpenFile openFile) {
@@ -605,25 +620,35 @@ public class UserProcess {
 //        System.out.println("Syscall: " + syscall);
         switch (syscall) {
             case syscallHalt:
+                System.out.println("Syscall: Halt");
                 //todo: this can only be called by the root/first process
                 return handleHalt();
             case syscallExit:
+                System.out.println("Syscall: Exit");
                 return handleExit(a0);
             case syscallExec:
+                System.out.println("Syscall: Exec");
                 return handleExec(a0, a1, a2);
             case syscallJoin:
+                System.out.println("Syscall: Join");
                 return handleJoin(a0, a1);
             case syscallCreat:
+                System.out.println("Syscall: Creat");
                 return handleCreat(a0);
             case syscallOpen:
+                System.out.println("Syscall: Open");
                 return handleOpen(a0);
             case syscallRead:
+                System.out.println("Syscall: Read");
                 return handleRead(a0, a1, a2);
             case syscallWrite:
+                System.out.println("Syscall: Write");
                 return handleWrite(a0, a1, a2);
             case syscallClose:
+                System.out.println("Syscall: Close");
                 return handleClose(a0);
             case syscallUnlink:
+                System.out.println("Syscall: Unlink");
                 return handleUnlink(readVirtualMemoryString(a0, 256));
 
             default:
