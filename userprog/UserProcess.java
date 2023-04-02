@@ -3,9 +3,11 @@ package nachos.userprog;
 import nachos.machine.*;
 import nachos.threads.*;
 
+
 import java.io.EOFException;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Collections;
 
 /**
  * Encapsulates the state of a user process that is not contained in its
@@ -139,7 +141,7 @@ public class UserProcess {
         if (!(offset >= 0 && length >= 0 && offset + length <= data.length)) {
 //            System.out.println((offset >= 0 && length >= 0) + " : " + (offset + length <= data.length));
 //            System.out.println("First thing failed: " + offset + ", " + length + ", " + (offset + length) + ", " + data.length);
-            return -1;
+            return 0;
         }
 
         byte[] memory = Machine.processor().getMemory();
@@ -149,9 +151,26 @@ public class UserProcess {
             return 0;
 
         int amount = Math.min(length, memory.length - vaddr);
-        System.arraycopy(memory, vaddr, data, offset, amount);
+        int rData = 0;
 
-        return amount;
+        for (int i = 0; i < amount; i++){
+            int vpn = vaddr + i;
+            
+            TranslationEntry checkEntry = pageTable[vpn/Machine.processor().pageSize];
+           
+            if (checkEntry.valid || checkEntry == null){
+                break;
+            }
+            checkEntry.used = true;
+            int ppn =  ((checkEntry.ppn * Machine.processor().pageSize) + (vpn % Machine.processor().pageSize));
+            data[i + offset] = memory[ppn];
+            rData++;
+        }
+    
+
+        //System.arraycopy(memory, vaddr, data, offset, amount);
+
+        return rData;
     }
 
     /**
@@ -192,9 +211,24 @@ public class UserProcess {
             return 0;
 
         int amount = Math.min(length, memory.length - vaddr);
-        System.arraycopy(data, offset, memory, vaddr, amount);
+        int wData = 0;
 
-        return amount;
+	    for (int i = 0; i < amount; i++){
+            int vpn = vaddr + i;
+           
+                TranslationEntry checkEntry = pageTable[vpn/Machine.processor().pageSize];
+            
+            if (!checkEntry.valid || checkEntry == null){
+                break;
+            }
+            checkEntry.used = true;
+            int ppn =  ((checkEntry.ppn * Machine.processor().pageSize) + (vpn % Machine.processor().pageSize));
+            memory[ppn] = data[i + offset];
+		    wData++;
+        }
+        //System.arraycopy(data, offset, memory, vaddr, amount);
+
+        return wData;
     }
 
     /**
@@ -253,6 +287,9 @@ public class UserProcess {
         // program counter initially points at the program entry point
         initialPC = coff.getEntryPoint();
 
+        for (int i= 0; i < numPages; i++){
+            pageTable[i] = new TranslationEntry(i, UserKernel.allocatePage(), true, false, false, false);
+        }
         // next comes the stack; stack pointer initially points to top of it
         numPages += stackPages;
         initialSP = numPages * pageSize;
@@ -309,7 +346,10 @@ public class UserProcess {
                 int vpn = section.getFirstVPN() + i;
 
                 // for now, just assume virtual addresses=physical addresses
-                section.loadPage(i, vpn);
+                // section.loadPage(i, vpn);
+                TranslationEntry ploc = pageTable[vpn];
+		        ploc.readOnly = section.isReadOnly();
+		        section.loadPage(i, ploc.ppn);
             }
         }
 
@@ -320,6 +360,10 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
+        for(int i =0; i < numPages; i++){
+            UserKernel.freePage(pageTable[i].ppn);
+            pageTable[i].valid = false;
+        }    
     }
 
     /**
