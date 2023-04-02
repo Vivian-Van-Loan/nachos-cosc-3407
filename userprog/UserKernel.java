@@ -11,7 +11,7 @@ import nachos.threads.*;
 public class UserKernel extends ThreadedKernel {
     public static Lock pageLock;
 
-    public static LinkedList<Integer> freePages = null;
+    public static LinkedList<Integer> freePages;
     
     static int pid = 0;
     /**
@@ -30,9 +30,9 @@ public class UserKernel extends ThreadedKernel {
 
         console = new SynchConsole(Machine.console());
         pageLock = new Lock();
-	    LinkedList<Integer> freePages = new LinkedList<Integer>();
-	    for (int i = 0; i < Machine.processor().getNumPhysPages(); i++){
-		    freePages.add(i);
+        freePages = new LinkedList<>();
+        for (int i = 0; i < Machine.processor().getNumPhysPages(); i++){
+                freePages.add(i);
         }
         Machine.processor().setExceptionHandler(new Runnable() {
             public void run() {

@@ -31,10 +31,10 @@ int main() {
         exit(1);
     }
     closeRet = close(fd);
-        if (closeRet == -1) {
-            printf("Failed to close (2nd call)\n");
-            exit(1);
-        }
+    if (closeRet == -1) {
+        printf("Failed to close (2nd call)\n");
+        exit(1);
+    }
     int unlinkRet = unlink("cowut.bin");
     if (unlinkRet == -1) {
         printf("Failed to unlink\n");

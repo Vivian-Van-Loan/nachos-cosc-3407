@@ -26,17 +26,9 @@ public class UserProcess {
      * Allocate a new process.
      */
     public UserProcess() {
-        int numPhysPages = Machine.processor().getNumPhysPages();
-        pageTable = new TranslationEntry[numPhysPages];
         openFiles = new FileTriple[16];
-        for (int i = 0; i < numPhysPages; i++)
-            pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         insertFileTable(UserKernel.console.openForReading()); //STDIN, fd0
         insertFileTable(UserKernel.console.openForWriting()); //STDOUT,fd1
-        boolean intStatus = Machine.interrupt().disable();
-        pid = pidCounter++;
-        numAlive++;
-        Machine.interrupt().restore(intStatus);
     }
 
     /**
@@ -61,6 +53,11 @@ public class UserProcess {
     public boolean execute(String name, String[] args) {
         if (!load(name, args))
             return false;
+
+        boolean intStatus = Machine.interrupt().disable();
+        pid = pidCounter++;
+        numAlive++;
+        Machine.interrupt().restore(intStatus);
 
         new UThread(this).setName(name).fork();
 
@@ -155,10 +152,14 @@ public class UserProcess {
 
         for (int i = 0; i < amount; i++){
             int vpn = vaddr + i;
-            
-            TranslationEntry checkEntry = pageTable[vpn/Machine.processor().pageSize];
-           
-            if (checkEntry.valid || checkEntry == null){
+            TranslationEntry checkEntry;
+            try {
+                checkEntry = pageTable[vpn / Machine.processor().pageSize];
+            } catch (IndexOutOfBoundsException e) {
+                break;
+            }
+
+            if (checkEntry == null || !checkEntry.valid){
                 break;
             }
             checkEntry.used = true;
@@ -166,7 +167,7 @@ public class UserProcess {
             data[i + offset] = memory[ppn];
             rData++;
         }
-    
+
 
         //System.arraycopy(memory, vaddr, data, offset, amount);
 
@@ -287,9 +288,6 @@ public class UserProcess {
         // program counter initially points at the program entry point
         initialPC = coff.getEntryPoint();
 
-        for (int i= 0; i < numPages; i++){
-            pageTable[i] = new TranslationEntry(i, UserKernel.allocatePage(), true, false, false, false);
-        }
         // next comes the stack; stack pointer initially points to top of it
         numPages += stackPages;
         initialSP = numPages * pageSize;
@@ -335,6 +333,11 @@ public class UserProcess {
             return false;
         }
 
+        pageTable = new TranslationEntry[numPages];
+        for (int i= 0; i < numPages; i++){
+            pageTable[i] = new TranslationEntry(i, UserKernel.allocatePage(), true, false, false, false);
+        }
+
         // load sections
         for (int s = 0; s < coff.getNumSections(); s++) {
             CoffSection section = coff.getSection(s);
@@ -348,8 +351,8 @@ public class UserProcess {
                 // for now, just assume virtual addresses=physical addresses
                 // section.loadPage(i, vpn);
                 TranslationEntry ploc = pageTable[vpn];
-		        ploc.readOnly = section.isReadOnly();
-		        section.loadPage(i, ploc.ppn);
+                ploc.readOnly = section.isReadOnly();
+                section.loadPage(i, ploc.ppn);
             }
         }
 
@@ -560,7 +563,7 @@ public class UserProcess {
             return -1;
     }
 
-    private int handleExit(int exitValue) {
+    private int handleExit(int exitValue, int normalExit) {
         unloadSections();
         for (int i = 0; i < openFiles.length; i++)
             handleClose(i); //close all open files
@@ -568,7 +571,7 @@ public class UserProcess {
             parentProc.infoSem.P();
             Tuple4<UserProcess, Semaphore, Integer, Integer> info = parentProc.childInfo.get(this.pid);
             info.third = exitValue;
-            info.fourth = 1; //exited normally
+            info.fourth = normalExit;
             info.second.V(); //wake up any procs joined to this one
             parentProc.infoSem.V();
         }
@@ -710,7 +713,7 @@ public class UserProcess {
             case syscallHalt:
                 return handleHalt();
             case syscallExit:
-                return handleExit(a0);
+                return handleExit(a0, 1);
             case syscallExec:
                 return handleExec(a0, a1, a2);
             case syscallJoin:
@@ -757,6 +760,12 @@ public class UserProcess {
                 processor.writeRegister(Processor.regV0, result);
                 processor.advancePC();
                 break;
+            case Processor.exceptionPageFault:
+                Lib.debug(dbgProcess, "Handling page fault by killing proc");
+                handleExit(Processor.exceptionPageFault, 0);
+            case Processor.exceptionReadOnly:
+                Lib.debug(dbgProcess, "Handling write to read only by killing proc");
+                handleExit(Processor.exceptionReadOnly, 0);
 
             default:
                 Lib.debug(dbgProcess, "Unexpected exception: " +
